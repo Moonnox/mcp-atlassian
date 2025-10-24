@@ -21,6 +21,7 @@ This file provides guidance for autonomous coding agents working inside the **MC
 
 ---
 
+
 ## Mandatory dev workflow
 
 ```bash

@@ -188,6 +188,7 @@ async def get_jira_fetcher(ctx: Context) -> JiraFetcher:
             not user_auth_type
             and hasattr(request.state, "jira_config")
             and request.state.jira_config
+            and isinstance(request.state.jira_config, JiraConfig)
         ):
             logger.info("get_jira_fetcher: Using Jira config from request headers")
             header_config = request.state.jira_config
@@ -311,6 +312,7 @@ async def get_confluence_fetcher(ctx: Context) -> ConfluenceFetcher:
             not user_auth_type
             and hasattr(request.state, "confluence_config")
             and request.state.confluence_config
+            and isinstance(request.state.confluence_config, ConfluenceConfig)
         ):
             logger.info("get_confluence_fetcher: Using Confluence config from request headers")
             header_config = request.state.confluence_config

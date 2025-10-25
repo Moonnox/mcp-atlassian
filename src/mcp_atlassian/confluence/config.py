@@ -143,6 +143,72 @@ class ConfluenceConfig:
             custom_headers=custom_headers,
         )
 
+    @classmethod
+    def from_headers(cls, headers: dict[str, str]) -> "ConfluenceConfig":
+        """Create configuration from HTTP headers.
+
+        Args:
+            headers: Dictionary of HTTP headers (case-insensitive keys)
+
+        Returns:
+            ConfluenceConfig with values from headers
+
+        Raises:
+            ValueError: If required headers are missing or invalid
+        """
+        # Normalize headers to lowercase for case-insensitive lookup
+        normalized_headers = {k.lower(): v for k, v in headers.items()}
+
+        url = normalized_headers.get("x-confluence-url")
+        if not url:
+            error_msg = "Missing required X-Confluence-Url header"
+            raise ValueError(error_msg)
+
+        # Get authentication credentials from headers
+        username = normalized_headers.get("x-confluence-username")
+        api_token = normalized_headers.get("x-confluence-api-token")
+        personal_token = normalized_headers.get("x-confluence-personal-token")
+
+        # Determine authentication type
+        auth_type = None
+        oauth_config = None
+        is_cloud = is_atlassian_cloud_url(url)
+
+        if is_cloud:
+            if username and api_token:
+                auth_type = "basic"
+            else:
+                error_msg = "Cloud authentication requires X-Confluence-Username and X-Confluence-Api-Token headers"
+                raise ValueError(error_msg)
+        else:  # Server/Data Center
+            if personal_token:
+                auth_type = "pat"
+            elif username and api_token:
+                auth_type = "basic"
+            else:
+                error_msg = "Server/Data Center authentication requires X-Confluence-Personal-Token or X-Confluence-Username and X-Confluence-Api-Token headers"
+                raise ValueError(error_msg)
+
+        # Get optional configuration from headers
+        spaces_filter = normalized_headers.get("x-confluence-spaces-filter")
+        ssl_verify = normalized_headers.get("x-confluence-ssl-verify", "true").lower() != "false"
+
+        return cls(
+            url=url,
+            auth_type=auth_type,
+            username=username,
+            api_token=api_token,
+            personal_token=personal_token,
+            oauth_config=oauth_config,
+            ssl_verify=ssl_verify,
+            spaces_filter=spaces_filter,
+            http_proxy=None,
+            https_proxy=None,
+            no_proxy=None,
+            socks_proxy=None,
+            custom_headers=None,
+        )
+
     def is_auth_configured(self) -> bool:
         """Check if the current authentication configuration is complete and valid for making API calls.
 

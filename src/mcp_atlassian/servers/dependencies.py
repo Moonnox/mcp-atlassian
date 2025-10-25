@@ -179,8 +179,21 @@ async def get_jira_fetcher(ctx: Context) -> JiraFetcher:
         if hasattr(request.state, "jira_fetcher") and request.state.jira_fetcher:
             logger.debug("get_jira_fetcher: Returning JiraFetcher from request.state.")
             return request.state.jira_fetcher
+        
         user_auth_type = getattr(request.state, "user_atlassian_auth_type", None)
         logger.debug(f"get_jira_fetcher: User auth type: {user_auth_type}")
+        
+        # Check for header-based configuration (only if not using user-provided OAuth/PAT tokens)
+        if (
+            not user_auth_type
+            and hasattr(request.state, "jira_config")
+            and request.state.jira_config
+        ):
+            logger.info("get_jira_fetcher: Using Jira config from request headers")
+            header_config = request.state.jira_config
+            jira_fetcher = JiraFetcher(config=header_config)
+            request.state.jira_fetcher = jira_fetcher
+            return jira_fetcher
         # If OAuth or PAT token is present, create user-specific fetcher
         if user_auth_type in ["oauth", "pat"] and hasattr(
             request.state, "user_atlassian_token"
@@ -289,8 +302,21 @@ async def get_confluence_fetcher(ctx: Context) -> ConfluenceFetcher:
                 "get_confluence_fetcher: Returning ConfluenceFetcher from request.state."
             )
             return request.state.confluence_fetcher
+        
         user_auth_type = getattr(request.state, "user_atlassian_auth_type", None)
         logger.debug(f"get_confluence_fetcher: User auth type: {user_auth_type}")
+        
+        # Check for header-based configuration (only if not using user-provided OAuth/PAT tokens)
+        if (
+            not user_auth_type
+            and hasattr(request.state, "confluence_config")
+            and request.state.confluence_config
+        ):
+            logger.info("get_confluence_fetcher: Using Confluence config from request headers")
+            header_config = request.state.confluence_config
+            confluence_fetcher = ConfluenceFetcher(config=header_config)
+            request.state.confluence_fetcher = confluence_fetcher
+            return confluence_fetcher
         if user_auth_type in ["oauth", "pat"] and hasattr(
             request.state, "user_atlassian_token"
         ):

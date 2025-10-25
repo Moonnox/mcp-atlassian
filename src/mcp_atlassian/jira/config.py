@@ -143,6 +143,72 @@ class JiraConfig:
             custom_headers=custom_headers,
         )
 
+    @classmethod
+    def from_headers(cls, headers: dict[str, str]) -> "JiraConfig":
+        """Create configuration from HTTP headers.
+
+        Args:
+            headers: Dictionary of HTTP headers (case-insensitive keys)
+
+        Returns:
+            JiraConfig with values from headers
+
+        Raises:
+            ValueError: If required headers are missing or invalid
+        """
+        # Normalize headers to lowercase for case-insensitive lookup
+        normalized_headers = {k.lower(): v for k, v in headers.items()}
+
+        url = normalized_headers.get("x-jira-url")
+        if not url:
+            error_msg = "Missing required X-Jira-Url header"
+            raise ValueError(error_msg)
+
+        # Get authentication credentials from headers
+        username = normalized_headers.get("x-jira-username")
+        api_token = normalized_headers.get("x-jira-api-token")
+        personal_token = normalized_headers.get("x-jira-personal-token")
+
+        # Determine authentication type
+        auth_type = None
+        oauth_config = None
+        is_cloud = is_atlassian_cloud_url(url)
+
+        if is_cloud:
+            if username and api_token:
+                auth_type = "basic"
+            else:
+                error_msg = "Cloud authentication requires X-Jira-Username and X-Jira-Api-Token headers"
+                raise ValueError(error_msg)
+        else:  # Server/Data Center
+            if personal_token:
+                auth_type = "pat"
+            elif username and api_token:
+                auth_type = "basic"
+            else:
+                error_msg = "Server/Data Center authentication requires X-Jira-Personal-Token or X-Jira-Username and X-Jira-Api-Token headers"
+                raise ValueError(error_msg)
+
+        # Get optional configuration from headers
+        projects_filter = normalized_headers.get("x-jira-projects-filter")
+        ssl_verify = normalized_headers.get("x-jira-ssl-verify", "true").lower() != "false"
+
+        return cls(
+            url=url,
+            auth_type=auth_type,
+            username=username,
+            api_token=api_token,
+            personal_token=personal_token,
+            oauth_config=oauth_config,
+            ssl_verify=ssl_verify,
+            projects_filter=projects_filter,
+            http_proxy=None,
+            https_proxy=None,
+            no_proxy=None,
+            socks_proxy=None,
+            custom_headers=None,
+        )
+
     def is_auth_configured(self) -> bool:
         """Check if the current authentication configuration is complete and valid for making API calls.
 

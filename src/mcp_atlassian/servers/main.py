@@ -121,11 +121,29 @@ class AtlassianMCP(FastMCP[MainAppContext]):
             if isinstance(lifespan_ctx_dict, dict)
             else None
         )
-        read_only = (
-            getattr(app_lifespan_state, "read_only", False)
-            if app_lifespan_state
-            else False
-        )
+        
+        # Check for per-request read-only mode from headers first
+        read_only = False
+        try:
+            from fastmcp.server.dependencies import get_http_request
+            request = get_http_request()
+            if hasattr(request.state, "read_only_mode"):
+                read_only = request.state.read_only_mode
+                logger.debug(f"_main_mcp_list_tools: Using read-only mode from request headers: {read_only}")
+            else:
+                read_only = (
+                    getattr(app_lifespan_state, "read_only", False)
+                    if app_lifespan_state
+                    else False
+                )
+        except RuntimeError:
+            # Not in HTTP request context, use global setting
+            read_only = (
+                getattr(app_lifespan_state, "read_only", False)
+                if app_lifespan_state
+                else False
+            )
+        
         enabled_tools_filter = (
             getattr(app_lifespan_state, "enabled_tools", None)
             if app_lifespan_state
@@ -218,6 +236,26 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 "UserTokenMiddleware initialized without mcp_server_ref. Path matching for MCP endpoint might fail if settings are needed."
             )
+    
+    def _extract_config_headers(self, request: Request) -> None:
+        """Extract Jira and Confluence configuration from request headers."""
+        # Try to load Jira config from headers
+        if request.headers.get("X-Jira-Url"):
+            try:
+                jira_config = JiraConfig.from_headers(dict(request.headers))
+                request.state.jira_config = jira_config
+                logger.debug("UserTokenMiddleware: Loaded Jira config from headers")
+            except ValueError as e:
+                logger.warning(f"Failed to load Jira config from headers: {e}")
+        
+        # Try to load Confluence config from headers
+        if request.headers.get("X-Confluence-Url"):
+            try:
+                confluence_config = ConfluenceConfig.from_headers(dict(request.headers))
+                request.state.confluence_config = confluence_config
+                logger.debug("UserTokenMiddleware: Loaded Confluence config from headers")
+            except ValueError as e:
+                logger.warning(f"Failed to load Confluence config from headers: {e}")
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -268,6 +306,18 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
                 logger.debug(
                     f"UserTokenMiddleware: MCP-Session-ID header found: {mcp_session_id}"
                 )
+            
+            # Extract configuration headers (if provided)
+            self._extract_config_headers(request)
+            
+            # Extract read-only mode header
+            read_only_header = request.headers.get("X-Read-Only-Mode")
+            if read_only_header:
+                request.state.read_only_mode = read_only_header.lower() in ("true", "1", "yes")
+                logger.debug(
+                    f"UserTokenMiddleware: Read-only mode from header: {request.state.read_only_mode}"
+                )
+            
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header.split(" ", 1)[1].strip()
                 if not token:

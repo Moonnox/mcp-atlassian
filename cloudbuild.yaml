@@ -1,13 +1,10 @@
 steps:
-  # Build the Docker image with BuildKit enabled via buildx
+  # Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      - 'buildx'
       - 'build'
-      - '--platform=linux/amd64'
       - '--tag=${_IMAGE_NAME}:${SHORT_SHA}'
       - '--tag=${_IMAGE_NAME}:latest'
-      - '--load'
       - '.'
 
   # Push the image to the registry

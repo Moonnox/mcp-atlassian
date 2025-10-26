@@ -1,6 +1,7 @@
 """Main FastMCP server setup for Atlassian integration."""
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal, Optional
@@ -41,6 +42,11 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
     services = get_available_services()
     read_only = is_read_only_mode()
     enabled_tools = get_enabled_tools()
+    
+    # Check if header-based configuration is enabled
+    header_config_enabled = os.getenv("HEADER_CONFIG", "false").lower() in ("true", "1", "yes")
+    if header_config_enabled:
+        logger.info("Header-based configuration is ENABLED. Configurations can be provided via HTTP headers.")
 
     loaded_jira_config: JiraConfig | None = None
     loaded_confluence_config: ConfluenceConfig | None = None
@@ -54,11 +60,15 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
                     "Jira configuration loaded and authentication is configured."
                 )
             else:
-                logger.warning(
-                    "Jira URL found, but authentication is not fully configured. Jira tools will be unavailable."
-                )
+                if not header_config_enabled:
+                    logger.warning(
+                        "Jira URL found, but authentication is not fully configured. Jira tools will be unavailable."
+                    )
         except Exception as e:
-            logger.error(f"Failed to load Jira configuration: {e}", exc_info=True)
+            if not header_config_enabled:
+                logger.error(f"Failed to load Jira configuration: {e}", exc_info=True)
+            else:
+                logger.debug(f"Jira not configured via environment (using header config): {e}")
 
     if services.get("confluence"):
         try:
@@ -69,11 +79,15 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
                     "Confluence configuration loaded and authentication is configured."
                 )
             else:
-                logger.warning(
-                    "Confluence URL found, but authentication is not fully configured. Confluence tools will be unavailable."
-                )
+                if not header_config_enabled:
+                    logger.warning(
+                        "Confluence URL found, but authentication is not fully configured. Confluence tools will be unavailable."
+                    )
         except Exception as e:
-            logger.error(f"Failed to load Confluence configuration: {e}", exc_info=True)
+            if not header_config_enabled:
+                logger.error(f"Failed to load Confluence configuration: {e}", exc_info=True)
+            else:
+                logger.debug(f"Confluence not configured via environment (using header config): {e}")
 
     app_context = MainAppContext(
         full_jira_config=loaded_jira_config,
@@ -176,22 +190,32 @@ class AtlassianMCP(FastMCP[MainAppContext]):
             is_jira_tool = "jira" in tool_tags
             is_confluence_tool = "confluence" in tool_tags
             service_configured_and_available = True
+            
+            # Check if header-based configuration is enabled
+            header_config_enabled = os.getenv("HEADER_CONFIG", "false").lower() in ("true", "1", "yes")
+            
             if app_lifespan_state:
                 if is_jira_tool and not app_lifespan_state.full_jira_config:
-                    logger.debug(
-                        f"Excluding Jira tool '{registered_name}' as Jira configuration/authentication is incomplete."
-                    )
-                    service_configured_and_available = False
+                    # If header config is enabled, tools can still be available via headers
+                    if not header_config_enabled:
+                        logger.debug(
+                            f"Excluding Jira tool '{registered_name}' as Jira configuration/authentication is incomplete."
+                        )
+                        service_configured_and_available = False
                 if is_confluence_tool and not app_lifespan_state.full_confluence_config:
-                    logger.debug(
-                        f"Excluding Confluence tool '{registered_name}' as Confluence configuration/authentication is incomplete."
+                    # If header config is enabled, tools can still be available via headers
+                    if not header_config_enabled:
+                        logger.debug(
+                            f"Excluding Confluence tool '{registered_name}' as Confluence configuration/authentication is incomplete."
+                        )
+                        service_configured_and_available = False
+            elif is_jira_tool or is_confluence_tool:
+                # If header config is enabled, don't exclude tools
+                if not header_config_enabled:
+                    logger.warning(
+                        f"Excluding tool '{registered_name}' as application context is unavailable to verify service configuration."
                     )
                     service_configured_and_available = False
-            elif is_jira_tool or is_confluence_tool:
-                logger.warning(
-                    f"Excluding tool '{registered_name}' as application context is unavailable to verify service configuration."
-                )
-                service_configured_and_available = False
 
             if not service_configured_and_available:
                 continue
@@ -239,6 +263,11 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
     
     def _extract_config_headers(self, request: Request) -> None:
         """Extract Jira and Confluence configuration from request headers."""
+        # Only extract header-based config if HEADER_CONFIG is enabled
+        header_config_enabled = os.getenv("HEADER_CONFIG", "false").lower() in ("true", "1", "yes")
+        if not header_config_enabled:
+            return
+        
         # Try to load Jira config from headers
         if request.headers.get("X-Jira-Url"):
             try:

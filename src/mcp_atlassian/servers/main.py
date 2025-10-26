@@ -225,6 +225,17 @@ class AtlassianMCP(FastMCP[MainAppContext]):
         logger.debug(
             f"_main_mcp_list_tools: Total tools after filtering: {len(filtered_tools)}"
         )
+        if filtered_tools:
+            logger.debug(
+                f"_main_mcp_list_tools: Available tools: {[t.name for t in filtered_tools]}"
+            )
+        else:
+            logger.warning(
+                "_main_mcp_list_tools: No tools available after filtering. "
+                f"header_config_enabled={os.getenv('HEADER_CONFIG', 'false').lower() in ('true', '1', 'yes')}, "
+                f"jira_config={'present' if app_lifespan_state and app_lifespan_state.full_jira_config else 'missing'}, "
+                f"confluence_config={'present' if app_lifespan_state and app_lifespan_state.full_confluence_config else 'missing'}"
+            )
         return filtered_tools
 
     def http_app(
